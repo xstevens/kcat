@@ -32,11 +32,8 @@ fn main() {
 
     let mut client = KafkaClient::new(vec!(args.flag_broker));
     let meta_res = client.load_metadata_all();
-    if meta_res.is_err() {
-        match meta_res.err() {
-            Some(err) => println!("Error: {}", err),
-            None => println!("Non-specific error")
-        }
+    if let Some(err) = meta_res.err() {
+        println!("Error fetching metadata: {}", err);
         return;
     }
 
