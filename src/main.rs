@@ -40,7 +40,7 @@ fn main() {
         return;
     }
 
-    let mut prev_offset:i64 = 0;
+    let mut prev_offset:i64 = -1;
     loop {
         let res = client.fetch_messages(
             args.flag_topic.to_string(), // topic
