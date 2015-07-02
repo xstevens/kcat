@@ -1,0 +1,10 @@
+[package]
+name = "kcat"
+version = "0.1.0"
+authors = ["Xavier Stevens <xavier@mystobreak.com>"]
+build = "build.rs"
+
+[dependencies]
+rustc-serialize = "*"
+docopt = "*"
+kafka = "*"
