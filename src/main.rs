@@ -1,54 +1,62 @@
-extern crate docopt;
-extern crate rustc_serialize;
+extern crate clap;
 extern crate kafka;
 
-use docopt::Docopt;
-use kafka::client::KafkaClient;
-
-// usage string
-static USAGE: &'static str = "
-kcat - cat for Kafka.
-
-Usage:
-    kcat [-b BROKER] -t TOPIC
-    kcat (-h | --help)
-
-Options:
-    -h, --help                  Show this message.
-    -b BROKER, --broker=BROKER  Kafka broker [default: localhost:9092].
-    -t TOPIC, --topic=TOPIC     Kafka topic.
-";
-
-#[derive(RustcDecodable, Debug)]
-struct Args {
-    flag_broker: String,
-    flag_topic: String,
-}
+use clap::{Arg, App};
+use kafka::client::{FetchPartition, KafkaClient};
 
 fn main() {
-    let args: Args = Docopt::new(USAGE)
-                            .and_then(|d| d.decode())
-                            .unwrap_or_else(|e| e.exit());
+    let args = App::new("kcat")
+                   .version("0.1.0")
+                   .about("cat for Apache Kafka")
+                   .arg(Arg::with_name("broker")
+                            .short("b")
+                            .long("broker")
+                            .value_name("BROKER")
+                            .help("Kafka broker")
+                            .takes_value(true))
+                   .arg(Arg::with_name("topic")
+                            .short("t")
+                            .long("topic")
+                            .value_name("TOPIC")
+                            .help("Kafka topic")
+                            .takes_value(true)
+                            .required(true))
+                   .get_matches();
+    let broker = args.value_of("broker").unwrap_or("localhost:9092");
+    let topic = args.value_of("topic").unwrap();
 
-    let mut client = KafkaClient::new(vec!(args.flag_broker));
+    let mut client = KafkaClient::new(vec![broker.to_owned()]);
     let meta_res = client.load_metadata_all();
     if let Some(err) = meta_res.err() {
         println!("Error fetching metadata: {}", err);
         return;
     }
 
-    let mut prev_offset:i64 = -1;
-    loop {
-        let res = client.fetch_messages(
-            args.flag_topic.to_string(), // topic
-            0,                           // partition
-            prev_offset + 1              // offset
-        );
-        if res.is_ok() {
-            for tmsg in res.unwrap() {
-                println!("{}", String::from_utf8(tmsg.message).unwrap());
-                prev_offset = tmsg.offset;
+
+    let req = &[FetchPartition::new(topic, 0, 0)];
+    let res = client.fetch_messages(req);
+    match res {
+        Ok(resps) => {
+            for resp in resps {
+                for t in resp.topics() {
+                    for p in t.partitions() {
+                        match p.data() {
+                            &Ok(ref data) => {
+                                for msg in data.messages() {
+
+                                    let value_as_str = String::from_utf8_lossy(msg.value);
+                                    println!("{}", &value_as_str);
+                                }
+                            }
+                            &Err(ref e) => {
+                                println!("Partition error: {}:{}: {}", t.topic(), p.partition(), e);
+                            }
+                        }
+                    }
+                }
             }
         }
+        Err(err) => println!("Error fetching messages: {}", err),
     }
+
 }
