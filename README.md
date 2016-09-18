@@ -20,7 +20,7 @@ cargo build
 ```
 
 ### Cross-compiling
-COMING SOON!
+Use Rustup. [https://blog.rust-lang.org/2016/05/13/rustup.html](https://blog.rust-lang.org/2016/05/13/rustup.html)
 
 ## Usage
 ```
@@ -29,7 +29,7 @@ kcat 0.1.0
 cat for Apache Kafka
 
 USAGE:
-    kcat --broker <BROKER> --topic <TOPIC>
+    kcat [OPTIONS] --topic <TOPIC>
 
 FLAGS:
     -h, --help       Prints help information
