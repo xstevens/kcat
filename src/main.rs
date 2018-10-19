@@ -1,9 +1,17 @@
-#[macro_use]
-extern crate clap;
-extern crate kafka;
+#[macro_use] extern crate clap;
+extern crate futures;
+
+extern crate rdkafka;
 
 use clap::{Arg, App};
-use kafka::client::{FetchPartition, KafkaClient};
+use futures::stream::Stream;
+use rdkafka::message::{Message, Headers};
+use rdkafka::client::ClientContext;
+use rdkafka::consumer::{Consumer, ConsumerContext, CommitMode, DefaultConsumerContext, Rebalance};
+use rdkafka::consumer::stream_consumer::StreamConsumer;
+use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
+use rdkafka::util::get_rdkafka_version;
+use rdkafka::error::KafkaResult;
 use std::io;
 use std::io::prelude::*;
 
@@ -27,40 +35,42 @@ fn main() {
         .get_matches();
     let broker = args.value_of("broker").unwrap_or("localhost:9092");
     let topic = args.value_of("topic").unwrap();
+    let topics = vec![topic];
 
-    let mut client = KafkaClient::new(vec![broker.to_owned()]);
-    let meta_res = client.load_metadata_all();
-    if let Some(err) = meta_res.err() {
-        println!("Error fetching metadata: {}", err);
-        return;
-    }
+    let consumer: StreamConsumer<DefaultConsumerContext> = ClientConfig::new()
+        .set("group.id", "kcat")
+        .set("bootstrap.servers", broker)
+        .set("enable.partition.eof", "false")
+        .set("enable.auto.commit", "false")
+        .set("auto.offset.reset", "smallest")
+        .create()
+        .expect("Failed to create consumer");
+    consumer.subscribe(&topics)
+        .expect("Failed to subscript to topic");
+    let message_stream = consumer.start();
 
-
-    let req = &[FetchPartition::new(topic, 0, 0)];
-    let res = client.fetch_messages(req);
-    match res {
-        Ok(resps) => {
-            let stdout = io::stdout();
-            let mut writer = io::BufWriter::new(stdout.lock());
-            for resp in resps {
-                for t in resp.topics() {
-                    for p in t.partitions() {
-                        match p.data() {
-                            &Ok(ref data) => {
-                                for msg in data.messages() {
-                                    let value_as_str = String::from_utf8_lossy(msg.value);
-                                    let _ = writeln!(writer, "{}", &value_as_str);
-                                }
-                            }
-                            &Err(ref e) => {
-                                let _ = writeln!(&mut io::stderr(), "Partition error: {}:{}: {}", t.topic(), p.partition(), e).unwrap();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Err(err) => writeln!(&mut io::stderr(), "Error fetching messages: {}", err).unwrap(),
+    let stdout = io::stdout();
+    let mut writer = io::BufWriter::new(stdout.lock());
+    let _ = writeln!(writer, "fetching messages...").unwrap();
+    writer.flush().unwrap();
+    for message in message_stream.wait() {
+        match message {
+            Err(_) => writeln!(&mut io::stderr(), "Error while reading from stream.").unwrap(),
+            Ok(Err(e)) => writeln!(&mut io::stderr(), "Kafka error: {}", e).unwrap(),
+            Ok(Ok(m)) => {
+                let payload = match m.payload_view::<str>() {
+                    None => "",
+                    Some(Ok(s)) => s,
+                    Some(Err(e)) => {
+                        writeln!(&mut io::stderr(), "Error while deserializing message payload: {:?}", e);
+                        ""
+                    },
+                };
+                writeln!(writer, "{}", payload).unwrap();
+                writer.flush().unwrap();
+                //consumer.commit_message(&m, CommitMode::Async).unwrap();
+            },
+        };
     }
 
 }

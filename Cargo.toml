@@ -5,7 +5,11 @@ authors = ["Xavier Stevens <xavier.stevens@gmail.com>"]
 
 [dependencies]
 clap = "2"
-kafka = "0.6"
+futures = "0.1.25"
+
+[dependencies.rdkafka]
+version = "0.17.0"
+features = ["ssl", "sasl"]
 
 [profile.release]
 lto = true
