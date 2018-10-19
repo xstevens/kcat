@@ -3,7 +3,7 @@ extern crate clap;
 extern crate kafka;
 
 use clap::{Arg, App};
-use kafka::client::{FetchPartition, KafkaClient};
+use kafka::client::{FetchOffset, FetchPartition, KafkaClient};
 use std::io;
 use std::io::prelude::*;
 
@@ -24,10 +24,17 @@ fn main() {
             .help("Kafka topic")
             .takes_value(true)
             .required(true))
+        .arg(Arg::with_name("partition")
+            .short("p")
+            .long("partition")
+            .value_name("PARTITION")
+            .help("Kafka topic partition")
+            .takes_value(true)
+            .default_value("0"))
         .get_matches();
     let broker = args.value_of("broker").unwrap_or("localhost:9092");
     let topic = args.value_of("topic").unwrap();
-
+    let partition = value_t!(args, "partition", u32).unwrap_or(0);
     let mut client = KafkaClient::new(vec![broker.to_owned()]);
     let meta_res = client.load_metadata_all();
     if let Some(err) = meta_res.err() {
@@ -35,8 +42,10 @@ fn main() {
         return;
     }
 
-
-    let req = &[FetchPartition::new(topic, 0, 0)];
+    let offsets = client.fetch_topic_offsets(topic, FetchOffset::Earliest).unwrap();
+    let partiton_offset = offsets.get(partition as usize)
+        .expect("failed to get offset for partition");
+    let req = &[FetchPartition::new(topic, partition as i32, partiton_offset.offset)];
     let res = client.fetch_messages(req);
     match res {
         Ok(resps) => {
